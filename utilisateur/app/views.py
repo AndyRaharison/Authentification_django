@@ -10,6 +10,13 @@ from utilisateur import settings
 from django.contrib.sites.shortcuts import get_current_site
 from django.template.loader import render_to_string
 from . tokens import generateToken
+from django.shortcuts import render , HttpResponseRedirect, get_object_or_404 , redirect
+from .resources import BeneficiaireResource
+from tablib import Dataset
+from .forms import BeneficiaireRegistration
+from .models import Beneficiaire, BeneficiaireModifie 
+from django.core.paginator import Paginator
+
 # Create your views here.
 
 
@@ -124,3 +131,111 @@ def activate(request, uidb64, token):
     else:
         messages.add_message(request,messages.ERROR, 'Activation failed please try again')
         return render(request,'authentification/index.html',{'messages':messages.get_messages(request)})
+
+#affichage des donnees
+def afficher(request):
+    query = request.GET.get('q')
+    benef = Beneficiaire.objects.all() 
+    
+    #recherche
+    if query:
+        benef = benef.filter(
+            nom__icontains=query) | \
+                                benef.filter(prenom__icontains=query) | \
+                                benef.filter(matricule__icontains=query)
+     # Nombre d'éléments à afficher par page
+    elements_par_page = 15
+    paginator = Paginator(benef, elements_par_page)
+    
+    # Récupérez le numéro de la page à afficher
+    page = request.GET.get('page', 1)
+    
+    # Obtenez les éléments de la page spécifiée
+    beneficiaires_pages = paginator.get_page(page)
+    return render(request,'tafika/liste.html',{'benefici':beneficiaires_pages} )
+
+def afficher_modifications(request):
+    query = request.GET.get('q')
+    beneficiaires_modifies = BeneficiaireModifie.objects.all()
+    #recherche
+    if query:
+        beneficiaires_modifies = beneficiaires_modifies.filter(
+            beneficiaire__nom__icontains=query) | \
+                                beneficiaires_modifies.filter(beneficiaire__prenom__icontains=query) | \
+                                beneficiaires_modifies.filter(beneficiaire__matricule__icontains=query)
+                                
+    # Nombre d'éléments à afficher par page
+    elements_par_page = 15
+    paginator = Paginator(beneficiaires_modifies, elements_par_page)
+    # Récupérez le numéro de la page à afficher
+    page = request.GET.get('page', 1)
+    # Obtenez les éléments de la page spécifiée
+    beneficiaires_modifies_page = paginator.get_page(page)
+    
+    return render(request, 'tafika/donneModif.html',{'beneficiaires_modifies': beneficiaires_modifies_page})
+
+#imporation
+def importation(request):
+    if request.method == 'POST':
+        beneficiaire_resource = BeneficiaireResource()
+        dataset = Dataset()
+        new_benenef = request.FILES['fichier']
+
+        try:
+            # Charger les données du fichier dans le dataset
+            imported_data = dataset.load(new_benenef.read(), format='xlsx')
+
+            # Utiliser les données du dataset pour créer des instances de Beneficiaire
+            for data in imported_data:
+                 value = Beneficiaire(
+                      data[0],
+                      data[1],
+                      data[2],
+                      data[3],
+                      data[4],
+                      data[5],
+                      data[6],
+                      data[7],
+                      data[8],
+                      data[9],
+                      data[10],
+                      data[11],
+                      data[12],
+                )
+            value.save(),
+
+            # Message de confirmation
+            message_confirmation = "Les bénéficiaires ont été importés avec succès."
+            return render(request, 'tafika/liste.html', {'message_confirmation': message_confirmation})
+
+        except Exception as e:
+            # Gérer les erreurs d'importation
+            return HttpResponse(f"Erreur lors de l'importation : {str(e)}")
+
+    return render(request, 'tafika/liste.html') 
+
+#suppression des donnees
+
+def suppression(request , id):
+    if request.method =='POST':
+            sup = Beneficiaire.objects.get(pk= id)
+            sup.delete()
+    return HttpResponseRedirect('/')
+
+#Modification des donnees
+
+def modifier_beneficiaire(request, beneficiaire_id):
+    beneficiaire = get_object_or_404(Beneficiaire, id=beneficiaire_id)
+
+    if request.method == 'POST':
+        form = BeneficiaireRegistration(request.POST, instance=beneficiaire)
+        if form.is_valid():
+            form.save()
+            # Après la modification, vous pouvez rediriger vers une page spécifique ou afficher un message de succès
+            return redirect('afficher_modifications')
+    else:
+        form = BeneficiaireRegistration(instance=beneficiaire)
+
+    return render(request, 'tafika/modification.html', {'form': form})
+
+
